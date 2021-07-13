@@ -304,15 +304,11 @@ def start(update: Update, context):
 
 
 def main():
-    global MAIN_CONNECTION, MAIN_CURSOR
     my_update = Updater(
         token=config.TOKEN,
         #base_url=config.PROXI,
         use_context=True
     )
-
-    MAIN_CONNECTION = sqlite3.connect("data/users.db")
-    MAIN_CURSOR = MAIN_CONNECTION.cursor()
 
     keyboard_handler = CallbackQueryHandler(callback=keyboard_regulate, pass_chat_data=True)
     text_handler = MessageHandler(Filters.all, texting)
