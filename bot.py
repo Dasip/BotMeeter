@@ -1,15 +1,12 @@
 import config, db
+from datetime import datetime, timedelta
+from apscheduler.events import *
+from apscheduler.schedulers.background import BackgroundScheduler
+from dialogs import *
 from db import *
 from utility import *
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ParseMode
 from telegram.ext import Updater, MessageHandler, CommandHandler, Filters, CallbackQueryHandler
-
-#CALLBACK_GOOD = "good"
-#CALLBACK_BAD = "bad"
-
-#GOOD_STICKER = "CAACAgIAAxkBAAJX_16nCRx3_yNcHjGJJ8UkEk62o0MTAAIXAAN_gBAunKNhxU-S6OIZBA"
-#BAD_STICKER = "CAACAgIAAxkBAAJYAV6nCSUZKTelneyyMG6wcXKM5u4VAAImAAN_gBAuCDLXyOyP3gYZBA"
-
 
 # Два массива отвечают за то, на какой стадии диалога с ботом находится юзер из конкретного чата
 # chat_id: <str>
@@ -24,10 +21,14 @@ TMP_USR_INF = {}
 # chat_id: <list>
 TMP_KEYBOARD_MESS = {}
 
+SCHEDULER = BackgroundScheduler()
 
-def create_cursor():
-    global MAIN_CONNECTION
-    return MAIN_CONNECTION.cursor()
+
+def listener(event):
+    if event.exception:
+        print(event.exception)
+    else:
+        print("WORKED FINE")
 
 
 def add_message_to_clearance(chat_id, message):
@@ -54,6 +55,13 @@ def delete_keyboard(query):
     )
 
 
+def add_scheduled_task(task_name, args, delta, jitter, tid):
+    time_now = datetime.now() + delta
+    SCHEDULER.add_job(task_name, "cron", year=time_now.year,
+                  month=time_now.month, day=time_now.day, hour=time_now.hour, minute=time_now.minute,
+                  second=time_now.second, id=str(tid), args=args, jitter=jitter)
+
+
 def regulate_profile(update: Update, context, query=None, current_call=None):
     chid = update.effective_message.chat_id
     user = update.effective_user
@@ -78,7 +86,7 @@ def regulate_profile(update: Update, context, query=None, current_call=None):
         if current_call in GENDER_CALLS.values():
             TMP_USR_INF[us_id]["gender"] = current_call
 
-        message = "Хорошо. Теперь напиши свое имя и фамилию в одну строку и нажми 'Отправить'\n\nПример: Сергей Орлов\n\n"
+        message = MESSAGE_NAME
         user_info = get_info_on(us_id)
         if user_info == None:
             message += "Текущее использующееся имя: {} {}".format(user.first_name, user.last_name)
@@ -104,7 +112,7 @@ def regulate_profile(update: Update, context, query=None, current_call=None):
             clear_keyboards(chid)
             TMP_USR_INF[us_id]["name"] = update.effective_message.text
 
-        message = "Выбери из списка свой город или напиши его название одной строкой и нажми 'Отправить'"
+        message = MESSAGE_CITY
         user_info = get_info_on(us_id)
         if user_info != None:
             message += "\n\nТекущий город: {}".format(user_info["city"])
@@ -128,9 +136,7 @@ def regulate_profile(update: Update, context, query=None, current_call=None):
             clear_keyboards(chid)
             TMP_USR_INF[us_id]["city"] = update.effective_message.text
 
-        message = "Напиши, о чем тебе было бы интересно поговорить, чем ты хочешь поделиться с другими " \
-                  " людьми?\nЭто может быть что угодно, от киберспорта до домашнего огорода\n" \
-                  "Или ты можешь стать человеком-загадкой и пропустить этот вопрос"
+        message = MESSAGE_INTEREST
         user_info = get_info_on(us_id)
         if user_info != None:
             if user_info["interest"] != "":
@@ -157,7 +163,7 @@ def regulate_profile(update: Update, context, query=None, current_call=None):
             clear_keyboards(chid)
             TMP_USR_INF[us_id]["interest"] = update.effective_message.text
 
-        text = "Отлично! Твой профиль обновлен!"
+        text = MESSAGE_PROFILE_SUCCESS
 
         context.bot.send_message(
             chat_id=chid,
@@ -180,7 +186,6 @@ def regulate_profile(update: Update, context, query=None, current_call=None):
 
 def regulate_contest(update: Update, context, query=None, current_call=None):
     chid = update.effective_message.chat_id
-    user = update.effective_user
     us_id = update.effective_user.id
 
     if query != None:
@@ -189,7 +194,7 @@ def regulate_contest(update: Update, context, query=None, current_call=None):
     if current_call == CONTEST_CALLS["YES"]:
         context.bot.send_message(
             chat_id=chid,
-            text="Отлично, я буду искать тебе собеседника, и как только найду, сразу познакомлю вас!"
+            text=MESSAGE_SEARCH_OK
         )
         user_info = get_info_on(us_id)
         TMP_USR_INF[chid] = {"tid": us_id, "prev_pair": user_info["prev_pair"]}
@@ -205,27 +210,77 @@ def regulate_contest(update: Update, context, query=None, current_call=None):
     elif current_call == CONTEST_CALLS["NO"]:
         context.bot.send_message(
             chat_id=chid,
-            text="Хорошо, я напишу тебе через неделю, если захочешь поискать собеседников!"
+            text=MESSAGE_SEARCH_NOT
         )
+
+
+def regulate_quest(update: Update, context, query, current_call):
+    chid = update.effective_message.chat_id
+    user = update.effective_user
+    us_id = update.effective_user.id
+
+    delete_keyboard(query)
+
+    if current_call == ENDING_CALLS["YES"]:
+        context.bot.send_message(
+            text=MESSAGE_QUEST_YES,
+            chat_id=chid,
+            reply_markup=generate_eval_keys()
+        )
+
+    elif current_call == ENDING_CALLS["PLANNING"]:
+        context.bot.send_message(
+            text=MESSAGE_QUEST_PLAN,
+            chat_id=chid
+        )
+        info = get_info_on(us_id)
+        diff = timedelta(days=3)
+
+        add_scheduled_task(remind_pair, (update, context, us_id, info["curr_pair"],), diff, 4, us_id)
+
+    elif current_call == ENDING_CALLS["NO"]:
+        context.bot.send_message(
+            text=MESSAGE_QUEST_NO,
+            chat_id=chid
+        )
+
+
+def remind_pair(update: Update, context, usid, pairid):
+    info2 = get_info_on(pairid)
+
+    CHAT_STATUS[usid] = STATUS["QUEST"]
+    CHAT_PHASE[usid] = 1
+    context.bot.send_message(
+        chat_id=usid,
+        text=f"Привет, это снова я! Вам с <a href='tg://user?id={pairid}'> {info2['name']} </a> уже удалось встретиться"
+             f" или поговорить?",
+        parse_mode=ParseMode.HTML,
+        reply_markup=generate_end_contest_keys()
+    )
 
 
 def connect_pair(update: Update, context, user_id, pair_id):
-    print("CONNECTING", user_id)
-    try:
-        pair_info = get_info_on(pair_id)
-        context.bot.send_message(
-            chat_id=user_id,
-            text="Привет! Я нашел тебе собеседника! Это - <a href='tg://user?id={}'> {} </a>!".format(pair_id, pair_info["name"]),
-            parse_mode=ParseMode.HTML
-        )
-    except Exception as e:
-        print(e)
+    pair_info = get_info_on(pair_id)
+    context.bot.send_message(
+        chat_id=user_id,
+        text="Привет! Я нашел тебе собеседника! Это - <a href='tg://user?id={}'> {} </a>!".format(pair_id, pair_info["name"]),
+        parse_mode=ParseMode.HTML
+    )
+
+    TMP_USR_INF[user_id] = {"user_id": user_id, "curr_pair": pair_id}
+    ok = patch_one_user(TMP_USR_INF[user_id])
+    if ok:
+        TMP_USR_INF[user_id] = {}
+
+    diff = timedelta(days=3)
+
+    add_scheduled_task(remind_pair, (update, context, user_id, pair_id,), diff, 4, user_id)
 
 
 def start_working(update: Update, context, chat_id):
     context.bot.send_message(
         chat_id=chat_id,
-        text="Готов участвовать в подборе собеседников на этой неделе?",
+        text=MESSAGE_SEARCH_ASK,
         reply_markup=generate_contest_keys()
     )
     CHAT_STATUS[chat_id] = STATUS["CONTEST"]
@@ -245,18 +300,34 @@ def keyboard_regulate(update: Update, context):
     if CHAT_STATUS[chid] == STATUS["CONTEST"]:
         regulate_contest(update, context, query, current_callback)
 
+    if CHAT_STATUS[chid] == STATUS["QUEST"]:
+        regulate_quest(update, context, query, current_callback)
+
 
 def texting(update: Update, context):
     chid = update.effective_message.chat_id
     if CHAT_STATUS[chid] == STATUS["PROFILE"] and CHAT_PHASE[chid] in [2, 3, 4]:
         regulate_profile(update, context)
-    else:
-        print("F")
-        context.bot.send_message(
-            chat_id=chid,
-            text="<a href='tg://user?id={}'> Я </a>".format(chid),
-            parse_mode=ParseMode.HTML
-        )
+
+
+def generate_eval_keys():
+    keyboard = [
+        [InlineKeyboardButton("Отлично!", callback_data=EVAL_CALLS["BEST"])],
+        [InlineKeyboardButton("Неплохо", callback_data=EVAL_CALLS["GOOD"])],
+        [InlineKeyboardButton("Могло быть и лучше...", callback_data=EVAL_CALLS["MID"])]
+    ]
+
+    return InlineKeyboardMarkup(keyboard)
+
+
+def generate_end_contest_keys():
+    keyboard = [
+        [InlineKeyboardButton("Да!", callback_data=ENDING_CALLS["YES"]),
+         InlineKeyboardButton("Не получилось", callback_data=ENDING_CALLS["NO"])],
+        [InlineKeyboardButton("Пока еще планируем", callback_data=ENDING_CALLS["PLANNING"])
+        ]
+    ]
+    return InlineKeyboardMarkup(keyboard)
 
 
 def generate_contest_keys():
@@ -337,11 +408,11 @@ def profile(update: Update, context):
 
     context.bot.send_message(
         chat_id=update.effective_message.chat_id,
-        text=f"Хочешь изменить свой профиль? Хорошо, я помогу тебе с этим!"
+        text=MESSAGE_PROFILE_CHANGE
     )
     context.bot.send_message(
         chat_id=ch_id,
-        text="В каком роде я могу к тебе обращаться?",
+        text=MESSAGE_GENDER,
         reply_markup=generate_gender_keys(user_info)
     )
     TMP_USR_INF[user_id] = {}
@@ -362,11 +433,11 @@ def start(update: Update, context):
     else:
         context.bot.send_message(
             chat_id=ch_id,
-            text="Привет! Ты, похоже, здесь впервые, верно? Прежде, чем я начну тебе помогать, давай познакомимся!️"
+            text=MESSAGE_FIRST
         )
         context.bot.send_message(
             chat_id=ch_id,
-            text="В каком роде я могу к тебе обращаться?",
+            text=MESSAGE_GENDER,
             reply_markup=generate_gender_keys(db_result)
         )
         TMP_USR_INF[user.id] = {}
@@ -385,6 +456,9 @@ def main():
     text_handler = MessageHandler(Filters.all, texting)
     start_handler = CommandHandler("start", start)
     profile_handler = CommandHandler("profile", profile)
+
+    SCHEDULER.add_listener(listener, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR | EVENT_JOB_ADDED)
+    SCHEDULER.start()
 
     my_update.dispatcher.add_handler(keyboard_handler)
     my_update.dispatcher.add_handler(start_handler)

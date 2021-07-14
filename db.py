@@ -10,7 +10,7 @@ def get_info_on(user_id):
     db_result = cursor.fetchone()
     if db_result != None:
         new_result = {}
-        keys = ["user_id", "name", "gender", "city", "interest", "prev_pair"]
+        keys = ["user_id", "name", "gender", "city", "interest", "prev_pair", "curr_pair"]
         counter = 0
         for i in db_result:
             new_result[keys[counter]] = i
@@ -32,7 +32,6 @@ def try_find_pair(data):
         new_pair = random.choice(db_result)
         return new_pair
     return None
-
 
 
 def add_to_pool(data):
@@ -67,8 +66,8 @@ def add_new_user(data):
     conn = sqlite3.connect(config.DB)
     cursor = conn.cursor()
 
-    dataset = (data["user_id"], data["name"], data["gender"], data["city"], data["interest"], -1)
-    cursor.execute("INSERT INTO users VALUES(?, ?, ?, ?, ?, ?);", dataset)
+    dataset = (data["user_id"], data["name"], data["gender"], data["city"], data["interest"], -1, -1)
+    cursor.execute("INSERT INTO users VALUES(?, ?, ?, ?, ?, ?, ?);", dataset)
     conn.commit()
     conn.close()
     return True
