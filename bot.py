@@ -204,13 +204,8 @@ def regulate_contest(update: Update, context, query=None, current_call=None):
             CHAT_STATUS[chid] = STATUS["POOL"]
             CHAT_PHASE[chid] = 1
         else:
-            try:
-                connect_pair(update, context, us_id, ok["tid"])
-                connect_pair(update, context, ok["tid"], us_id)
-            except Exception as e:
-                print(e)
-
-        print(get_pool())
+            connect_pair(update, context, us_id, ok["tid"])
+            connect_pair(update, context, ok["tid"], us_id)
 
     elif current_call == CONTEST_CALLS["NO"]:
         context.bot.send_message(
@@ -221,12 +216,12 @@ def regulate_contest(update: Update, context, query=None, current_call=None):
 
 def regulate_quest(update: Update, context, query, current_call):
     chid = update.effective_message.chat_id
-    user = update.effective_user
     us_id = update.effective_user.id
 
     delete_keyboard(query)
 
     if current_call == ENDING_CALLS["YES"]:
+        CHAT_STATUS[chid] = STATUS["EVAL"]
         context.bot.send_message(
             text=MESSAGE_QUEST_YES,
             chat_id=chid,
@@ -238,16 +233,46 @@ def regulate_quest(update: Update, context, query, current_call):
             text=MESSAGE_QUEST_PLAN,
             chat_id=chid
         )
-        info = get_info_on(us_id)
-        diff = timedelta(days=3)
+        delta = timedelta(seconds=3)
+        add_scheduled_task(start, (update, context,), delta, 4, us_id)
 
-        add_scheduled_task(remind_pair, (update, context, us_id, info["curr_pair"],), diff, 4, us_id)
 
     elif current_call == ENDING_CALLS["NO"]:
         context.bot.send_message(
             text=MESSAGE_QUEST_NO,
             chat_id=chid
         )
+
+        delta = timedelta(seconds=3)
+        add_scheduled_task(start, (update, context,), delta, 4, us_id)
+
+
+def regulate_eval(update: Update, context, query, current_call):
+    chid = update.effective_message.chat_id
+    us_id = update.effective_user.id
+
+    delete_keyboard(query)
+    if current_call == EVAL_CALLS["BEST"]:
+        context.bot.send_message(
+            chat_id=chid,
+            text="Я рад, что все прошло так замечательно! Надеюсь, следующая встреча тебе понравится не меньше!"
+        )
+
+    elif current_call == EVAL_CALLS["GOOD"]:
+        context.bot.send_message(
+            chat_id=chid,
+            text="Я рад, что все прошло довольно неплохо, и надеюсь, что следующая встреча пройдет лучше!"
+        )
+
+    elif current_call == EVAL_CALLS["MID"]:
+        context.bot.send_message(
+            chat_id=chid,
+            text="Мне жаль, что все прошло не слишком хорошо, но я надеюсь, что твоя следующая встреча пройдет лучше!"
+        )
+
+    delta = timedelta(seconds=3)
+    add_scheduled_task(start, (update, context,), delta, 4, us_id)
+
 
 
 def remind_pair(update: Update, context, usid, pairid):
@@ -262,6 +287,11 @@ def remind_pair(update: Update, context, usid, pairid):
         parse_mode=ParseMode.HTML,
         reply_markup=generate_end_contest_keys()
     )
+
+    TMP_USR_INF[usid] = {"user_id": usid, "curr_pair": -1, "prev_pair": pairid}
+    ok = patch_one_user(TMP_USR_INF[usid])
+    if ok:
+        TMP_USR_INF[usid] = {}
 
 
 def connect_pair(update: Update, context, user_id, pair_id):
@@ -278,7 +308,7 @@ def connect_pair(update: Update, context, user_id, pair_id):
     if ok2:
         TMP_USR_INF[user_id] = {}
 
-    diff = timedelta(days=3)
+    diff = timedelta(days=7)
 
     add_scheduled_task(remind_pair, (update, context, user_id, pair_id,), diff, 4, user_id)
 
@@ -308,6 +338,9 @@ def keyboard_regulate(update: Update, context):
 
     if CHAT_STATUS[chid] == STATUS["QUEST"]:
         regulate_quest(update, context, query, current_callback)
+
+    if CHAT_STATUS[chid] == STATUS["EVAL"]:
+        regulate_eval(update, context, query, current_callback)
 
 
 def texting(update: Update, context):
