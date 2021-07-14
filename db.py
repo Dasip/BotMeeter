@@ -1,5 +1,6 @@
 import sqlite3
 import config
+import random
 
 
 def get_info_on(user_id):
@@ -9,7 +10,7 @@ def get_info_on(user_id):
     db_result = cursor.fetchone()
     if db_result != None:
         new_result = {}
-        keys = ["user_id", "name", "gender", "city", "interest", "chat_id"]
+        keys = ["user_id", "name", "gender", "city", "interest", "prev_pair"]
         counter = 0
         for i in db_result:
             new_result[keys[counter]] = i
@@ -17,6 +18,36 @@ def get_info_on(user_id):
         db_result = new_result
     conn.close()
     return db_result
+
+
+def try_find_pair(data):
+    conn = sqlite3.connect(config.DB)
+    cursor = conn.cursor()
+    current_user = data["tid"]
+    prev_user = data["prev_pair"]
+
+    cursor.execute("SELECT * FROM pool WHERE tid != ? AND tid != ?", (current_user, prev_user))
+    db_result = cursor.fetchall()
+    if len(db_result) > 0:
+        new_pair = random.choice(db_result)
+        return new_pair
+    return None
+
+
+
+def add_to_pool(data):
+    conn = sqlite3.connect(config.DB)
+    cursor = conn.cursor()
+    dataset = (data["tid"], data["prev_pair"])
+    cursor.execute("INSERT INTO pool VALUES(?, ?);", dataset)
+    conn.commit()
+    conn.close()
+
+    new_pair = try_find_pair(data)
+    if new_pair == None:
+        return True
+    else:
+        return {"tid": new_pair[0]}
 
 
 def patch_one_user(data):
@@ -36,8 +67,8 @@ def add_new_user(data):
     conn = sqlite3.connect(config.DB)
     cursor = conn.cursor()
 
-    dataset = (data["user_id"], data["name"], data["gender"], data["city"], data["interest"], data["chat_id"])
-    cursor.execute("INSERT INTO users VALUES(?, ?, ?, ?, ?);", dataset)
+    dataset = (data["user_id"], data["name"], data["gender"], data["city"], data["interest"], -1)
+    cursor.execute("INSERT INTO users VALUES(?, ?, ?, ?, ?, ?);", dataset)
     conn.commit()
     conn.close()
     return True

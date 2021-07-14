@@ -1,7 +1,7 @@
 import config, db
 from db import *
 from utility import *
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ParseMode
 from telegram.ext import Updater, MessageHandler, CommandHandler, Filters, CallbackQueryHandler
 
 #CALLBACK_GOOD = "good"
@@ -165,7 +165,6 @@ def regulate_profile(update: Update, context, query=None, current_call=None):
         )
 
         TMP_USR_INF[us_id]["user_id"] = user.id
-        TMP_USR_INF[us_id]["chat_id"] = chid
         if get_info_on(user.id) == None:
             ok = db.add_new_user(TMP_USR_INF[us_id])
         else:
@@ -176,6 +175,61 @@ def regulate_profile(update: Update, context, query=None, current_call=None):
         CHAT_STATUS[chid] = STATUS["FREE"]
         CHAT_PHASE[chid] = 0
 
+        start_working(update, context, chid)
+
+
+def regulate_contest(update: Update, context, query=None, current_call=None):
+    chid = update.effective_message.chat_id
+    user = update.effective_user
+    us_id = update.effective_user.id
+
+    if query != None:
+        delete_keyboard(query)
+
+    if current_call == CONTEST_CALLS["YES"]:
+        context.bot.send_message(
+            chat_id=chid,
+            text="Отлично, я буду искать тебе собеседника, и как только найду, сразу познакомлю вас!"
+        )
+        user_info = get_info_on(us_id)
+        TMP_USR_INF[chid] = {"tid": us_id, "prev_pair": user_info["prev_pair"]}
+        ok = add_to_pool(TMP_USR_INF[chid])
+        if ok == None:
+            TMP_USR_INF[chid] = {}
+            CHAT_STATUS[chid] = STATUS["POOL"]
+            CHAT_PHASE[chid] = 1
+        else:
+            connect_pair(update, context, us_id, ok["tid"])
+            connect_pair(update, context, ok["tid"], us_id)
+
+    elif current_call == CONTEST_CALLS["NO"]:
+        context.bot.send_message(
+            chat_id=chid,
+            text="Хорошо, я напишу тебе через неделю, если захочешь поискать собеседников!"
+        )
+
+
+def connect_pair(update: Update, context, user_id, pair_id):
+    print("CONNECTING", user_id)
+    try:
+        pair_info = get_info_on(pair_id)
+        context.bot.send_message(
+            chat_id=user_id,
+            text="Привет! Я нашел тебе собеседника! Это - <a href='tg://user?id={}'> {} </a>!".format(pair_id, pair_info["name"]),
+            parse_mode=ParseMode.HTML
+        )
+    except Exception as e:
+        print(e)
+
+
+def start_working(update: Update, context, chat_id):
+    context.bot.send_message(
+        chat_id=chat_id,
+        text="Готов участвовать в подборе собеседников на этой неделе?",
+        reply_markup=generate_contest_keys()
+    )
+    CHAT_STATUS[chat_id] = STATUS["CONTEST"]
+    CHAT_PHASE[chat_id] = 1
 
 
 def keyboard_regulate(update: Update, context):
@@ -188,11 +242,30 @@ def keyboard_regulate(update: Update, context):
     if CHAT_STATUS[chid] == STATUS["PROFILE"]:
         regulate_profile(update, context, query, current_callback)
 
+    if CHAT_STATUS[chid] == STATUS["CONTEST"]:
+        regulate_contest(update, context, query, current_callback)
+
 
 def texting(update: Update, context):
     chid = update.effective_message.chat_id
     if CHAT_STATUS[chid] == STATUS["PROFILE"] and CHAT_PHASE[chid] in [2, 3, 4]:
         regulate_profile(update, context)
+    else:
+        print("F")
+        context.bot.send_message(
+            chat_id=chid,
+            text="<a href='tg://user?id={}'> Я </a>".format(chid),
+            parse_mode=ParseMode.HTML
+        )
+
+
+def generate_contest_keys():
+    keyboard = [
+        [InlineKeyboardButton("Участвую!", callback_data=CONTEST_CALLS["YES"]),
+         InlineKeyboardButton("Воздержусь", callback_data=CONTEST_CALLS["NO"])]
+    ]
+
+    return InlineKeyboardMarkup(keyboard)
 
 
 def generate_bio_keys(user_info):
@@ -281,13 +354,10 @@ def start(update: Update, context):
     ch_id = update.effective_message.chat_id
     user_name = user.first_name
     db_result = get_info_on(user.id)  # результат
-
     if db_result != None:
-        user_info = get_info_on(user.id)
-        context.bot.send_message(
-            chat_id=ch_id,
-            text=f"Привет, {user_info['name']}!\n Как твои дела?"
-        )
+        CHAT_STATUS[ch_id] = STATUS["FREE"]
+        CHAT_PHASE[ch_id] = 1
+        start_working(update, context, ch_id)
 
     else:
         context.bot.send_message(
