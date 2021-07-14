@@ -62,6 +62,16 @@ def add_scheduled_task(task_name, args, delta, jitter, tid):
                   second=time_now.second, id=str(tid), args=args, jitter=jitter)
 
 
+def generate_bio(user_id):
+    info = get_info_on(user_id)
+    noun1 = "он" if info["gender"] == GENDER_CALLS["MALE_CALL"] else "она"
+    noun2 = "его" if info["gender"] == GENDER_CALLS["MALE_CALL"] else "ее"
+
+    part_city = "{} - город, в котором {} живет.".format(info["city"].capitalize(), noun1)
+    part_interest = "{} главные интересы: {}".format(noun2.capitalize(), info["interest"])
+    return "\n{}\n{}".format(part_city, part_interest)
+
+
 def regulate_profile(update: Update, context, query=None, current_call=None):
     chid = update.effective_message.chat_id
     user = update.effective_user
@@ -296,9 +306,15 @@ def remind_pair(update: Update, context, usid, pairid):
 
 def connect_pair(update: Update, context, user_id, pair_id):
     pair_info = get_info_on(pair_id)
+    try:
+        addition = generate_bio(pair_id)
+    except Exception as e:
+        print(e)
     context.bot.send_message(
         chat_id=user_id,
-        text="Привет! Я нашел тебе собеседника! Это - <a href='tg://user?id={}'> {} </a>!".format(pair_id, pair_info["name"]),
+        text="Привет! Я нашел тебе собеседника! Это - <a href='tg://user?id={}'> {} </a>!{}".format(pair_id,
+                                                                                                    pair_info["name"],
+                                                                                                    addition),
         parse_mode=ParseMode.HTML
     )
 
