@@ -204,8 +204,13 @@ def regulate_contest(update: Update, context, query=None, current_call=None):
             CHAT_STATUS[chid] = STATUS["POOL"]
             CHAT_PHASE[chid] = 1
         else:
-            connect_pair(update, context, us_id, ok["tid"])
-            connect_pair(update, context, ok["tid"], us_id)
+            try:
+                connect_pair(update, context, us_id, ok["tid"])
+                connect_pair(update, context, ok["tid"], us_id)
+            except Exception as e:
+                print(e)
+
+        print(get_pool())
 
     elif current_call == CONTEST_CALLS["NO"]:
         context.bot.send_message(
@@ -269,7 +274,8 @@ def connect_pair(update: Update, context, user_id, pair_id):
 
     TMP_USR_INF[user_id] = {"user_id": user_id, "curr_pair": pair_id}
     ok = patch_one_user(TMP_USR_INF[user_id])
-    if ok:
+    ok2 = delete_from_pool(user_id)
+    if ok2:
         TMP_USR_INF[user_id] = {}
 
     diff = timedelta(days=3)

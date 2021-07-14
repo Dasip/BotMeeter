@@ -49,6 +49,24 @@ def add_to_pool(data):
         return {"tid": new_pair[0]}
 
 
+def get_pool():
+    conn = sqlite3.connect(config.DB)
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM pool;")
+    result = cursor.fetchall()
+    conn.close()
+    return result
+
+
+def delete_from_pool(user_info):
+    conn = sqlite3.connect(config.DB)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM pool WHERE tid = ?", (user_info, ))
+    conn.commit()
+    conn.close()
+    return True
+
+
 def patch_one_user(data):
     conn = sqlite3.connect(config.DB)
     cursor = conn.cursor()
