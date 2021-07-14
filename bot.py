@@ -165,6 +165,7 @@ def regulate_profile(update: Update, context, query=None, current_call=None):
         )
 
         TMP_USR_INF[us_id]["user_id"] = user.id
+        TMP_USR_INF[us_id]["chat_id"] = chid
         if get_info_on(user.id) == None:
             ok = db.add_new_user(TMP_USR_INF[us_id])
         else:

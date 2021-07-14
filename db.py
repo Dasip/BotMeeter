@@ -9,7 +9,7 @@ def get_info_on(user_id):
     db_result = cursor.fetchone()
     if db_result != None:
         new_result = {}
-        keys = ["user_id", "name", "gender", "city", "interest"]
+        keys = ["user_id", "name", "gender", "city", "interest", "chat_id"]
         counter = 0
         for i in db_result:
             new_result[keys[counter]] = i
@@ -36,7 +36,7 @@ def add_new_user(data):
     conn = sqlite3.connect(config.DB)
     cursor = conn.cursor()
 
-    dataset = (data["user_id"], data["name"], data["gender"], data["city"], data["interest"])
+    dataset = (data["user_id"], data["name"], data["gender"], data["city"], data["interest"], data["chat_id"])
     cursor.execute("INSERT INTO users VALUES(?, ?, ?, ?, ?);", dataset)
     conn.commit()
     conn.close()
