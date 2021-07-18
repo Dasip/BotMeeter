@@ -55,8 +55,11 @@ def delete_keyboard(query):
     )
 
 
-def add_scheduled_task(task_name, args, delta, jitter, tid):
-    time_now = datetime.now() + delta
+def add_scheduled_task(task_name, args, delta, jitter, tid, time=None):
+    if time == None:
+        time_now = datetime.now() + delta
+    else:
+        time_now = time
     SCHEDULER.add_job(task_name, "cron", year=time_now.year,
                   month=time_now.month, day=time_now.day, hour=time_now.hour, minute=time_now.minute,
                   second=time_now.second, id=str(tid), args=args, jitter=jitter)
@@ -70,6 +73,19 @@ def generate_bio(user_id):
     part_city = "{} - город, в котором {} живет.".format(info["city"].capitalize(), noun1)
     part_interest = "{} главные интересы: {}".format(noun2.capitalize(), info["interest"])
     return "\n{}\n{}".format(part_city, part_interest)
+
+
+def generate_date_string(date):
+    st = f"{date.year}-{date.month}-{date.day}-{date.hour}-{date.minute}-{date.second}"
+    return st
+
+
+def remake_reminders(context):
+    people = get_paired()
+    for person in people:
+        uid = person["user_id"]
+        add_scheduled_task(remind_pair, (None, context, uid, person["curr_pair"],), None, 4, uid, person["pair_date"])
+        print(f"MAKE REMINDER FOR {uid} and {person['pair_date']}")
 
 
 def regulate_profile(update: Update, context, query=None, current_call=None):
@@ -202,20 +218,23 @@ def regulate_contest(update: Update, context, query=None, current_call=None):
         delete_keyboard(query)
 
     if current_call == CONTEST_CALLS["YES"]:
-        context.bot.send_message(
-            chat_id=chid,
-            text=MESSAGE_SEARCH_OK
-        )
-        user_info = get_info_on(us_id)
-        TMP_USR_INF[chid] = {"tid": us_id, "prev_pair": user_info["prev_pair"]}
-        ok = add_to_pool(TMP_USR_INF[chid])
-        if ok == None:
-            TMP_USR_INF[chid] = {}
-            CHAT_STATUS[chid] = STATUS["POOL"]
-            CHAT_PHASE[chid] = 1
-        else:
-            connect_pair(update, context, us_id, ok["tid"])
-            connect_pair(update, context, ok["tid"], us_id)
+        try:
+            context.bot.send_message(
+                chat_id=chid,
+                text=MESSAGE_SEARCH_OK
+            )
+            user_info = get_info_on(us_id)
+            TMP_USR_INF[chid] = {"tid": us_id, "prev_pair": user_info["prev_pair"]}
+            ok = add_to_pool(TMP_USR_INF[chid])
+            if ok == None:
+                TMP_USR_INF[chid] = {}
+                CHAT_STATUS[chid] = STATUS["POOL"]
+                CHAT_PHASE[chid] = 1
+            else:
+                connect_pair(update, context, us_id, ok["tid"])
+                connect_pair(update, context, ok["tid"], us_id)
+        except Exception as e:
+            print(e)
 
     elif current_call == CONTEST_CALLS["NO"]:
         context.bot.send_message(
@@ -298,7 +317,7 @@ def remind_pair(update: Update, context, usid, pairid):
         reply_markup=generate_end_contest_keys()
     )
 
-    TMP_USR_INF[usid] = {"user_id": usid, "curr_pair": -1, "prev_pair": pairid}
+    TMP_USR_INF[usid] = {"user_id": usid, "curr_pair": -1, "prev_pair": pairid, "pair_date": "-1"}
     ok = patch_one_user(TMP_USR_INF[usid])
     if ok:
         TMP_USR_INF[usid] = {}
@@ -306,10 +325,7 @@ def remind_pair(update: Update, context, usid, pairid):
 
 def connect_pair(update: Update, context, user_id, pair_id):
     pair_info = get_info_on(pair_id)
-    try:
-        addition = generate_bio(pair_id)
-    except Exception as e:
-        print(e)
+    addition = generate_bio(pair_id)
     context.bot.send_message(
         chat_id=user_id,
         text="Привет! Я нашел тебе собеседника! Это - <a href='tg://user?id={}'> {} </a>!{}".format(pair_id,
@@ -318,13 +334,14 @@ def connect_pair(update: Update, context, user_id, pair_id):
         parse_mode=ParseMode.HTML
     )
 
-    TMP_USR_INF[user_id] = {"user_id": user_id, "curr_pair": pair_id}
+    diff = timedelta(seconds=50)
+
+    date = generate_date_string(datetime.now()+diff)
+    TMP_USR_INF[user_id] = {"user_id": user_id, "curr_pair": pair_id, "pair_date": date}
     ok = patch_one_user(TMP_USR_INF[user_id])
     ok2 = delete_from_pool(user_id)
     if ok2:
         TMP_USR_INF[user_id] = {}
-
-    diff = timedelta(days=7)
 
     add_scheduled_task(remind_pair, (update, context, user_id, pair_id,), diff, 4, user_id)
 
@@ -480,12 +497,14 @@ def start(update: Update, context):
     ch_id = update.effective_message.chat_id
     user_name = user.first_name
     db_result = get_info_on(user.id)  # результат
-    if db_result != None:
+    # Старый юзер, нет пары, не в пуле
+    if db_result != None and not is_in_pool(user.id) and db_result["curr_pair"] == -1:
         CHAT_STATUS[ch_id] = STATUS["FREE"]
         CHAT_PHASE[ch_id] = 1
         start_working(update, context, ch_id)
 
-    else:
+    # Новый юзер
+    elif db_result == None:
         context.bot.send_message(
             chat_id=ch_id,
             text=MESSAGE_FIRST
@@ -499,6 +518,20 @@ def start(update: Update, context):
         CHAT_STATUS[ch_id] = STATUS["PROFILE"]
         CHAT_PHASE[ch_id] = 1
 
+    # Пары нет, в пуле
+    elif is_in_pool(user.id):
+        context.bot.send_message(
+            chat_id=ch_id,
+            text=MESSAGE_ALREADY_POOLING
+        )
+
+    # Есть пара
+    elif db_result["curr_pair"] != -1:
+        context.bot.send_message(
+            chat_id=ch_id,
+            text=MESSAGE_ALREADY_IN_PAIR
+        )
+
 
 def main():
     my_update = Updater(
@@ -506,6 +539,8 @@ def main():
         #base_url=config.PROXI,
         use_context=True
     )
+
+    remake_reminders(my_update)
 
     keyboard_handler = CallbackQueryHandler(callback=keyboard_regulate, pass_chat_data=True)
     text_handler = MessageHandler(Filters.all, texting)
