@@ -334,7 +334,7 @@ def connect_pair(update: Update, context, user_id, pair_id):
         parse_mode=ParseMode.HTML
     )
 
-    diff = timedelta(seconds=50)
+    diff = timedelta(days=7)
 
     date = generate_date_string(datetime.now()+diff)
     TMP_USR_INF[user_id] = {"user_id": user_id, "curr_pair": pair_id, "pair_date": date}
